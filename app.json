@@ -1,15 +1,18 @@
 {
   "expo": {
-    "name": "yabot.jobs-mobile",
-    "slug": "yabot.jobs-mobile",
+    "name": "yabot.jobs",
+    "slug": "yabot-jobs",
+    "scheme": "yabotjobs",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "jobs.yabot.app"
     },
     "android": {
+      "package": "jobs.yabot.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -20,6 +23,19 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-web-browser",
+      "expo-notifications",
+      "expo-font"
+    ],
+    "extra": {
+      "apiBaseUrl": "http://localhost:8000",
+      "googleIosClientId": "",
+      "googleAndroidClientId": "",
+      "googleWebClientId": ""
     }
   }
 }

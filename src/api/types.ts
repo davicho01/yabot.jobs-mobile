@@ -1,0 +1,641 @@
+export interface User {
+  id: string;
+  email: string;
+  display_name: string | null;
+  status: string;
+  role: string;
+  created_at: string;
+  last_login_at: string | null;
+  email_alerts_enabled: boolean;
+}
+
+export interface JobPosting {
+  id: string;
+  url_id: string;
+  apply_url: string | null;
+  title: string | null;
+  company_name: string | null;
+  // null until the company's domain is known (or logos aren't configured) —
+  // CompanyLogo shows a letter avatar instead.
+  company_logo_url: string | null;
+  company_domain: string | null;
+  company_key: string | null;
+  location: string | null;
+  workplace_type: string;
+  employment_type: string;
+  sector: string;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  description: string | null;
+  extracted_fields: Record<string, unknown> | null;
+  posted_at: string | null;
+  scanned_at: string | null;
+  // Set once, the first time scanned_at itself is; never updated after
+  // that — unlike scanned_at, which every rescan moves forward.
+  first_scanned_at: string | null;
+  extraction_status: string;
+}
+
+export type FlagReason = "wrong_details" | "broken_or_expired" | "garbled_description" | "other";
+
+// Short admin-facing labels for FlagReason — see AdminJobsPage's flagged
+// column. FlagJobModal has its own, longer, reporter-facing wording for the
+// same reasons; these aren't meant to match verbatim.
+export const FLAG_REASON_LABELS: Record<FlagReason, string> = {
+  wrong_details: "Wrong details",
+  broken_or_expired: "Broken or expired",
+  garbled_description: "Garbled description",
+  other: "Other",
+};
+
+export interface JobPostingUrl {
+  id: string;
+  // The employer's link, only sent to someone signed in; has_url says there
+  // is one either way, so a signed-out Apply ↗ can ask them to sign in.
+  url: string | null;
+  has_url: boolean;
+  domain: string;
+  scan_status: string;
+  scan_error: string | null;
+  crawl_source_id: string | null;
+  last_scanned_at: string | null;
+  // When its board last listed it — the job page's "Last checked". Null for
+  // a URL no crawl lists (submitted by a user).
+  last_seen_at: string | null;
+  created_at: string;
+  // Set once the listing is gone from its source board or found expired —
+  // it's out of search but still reachable by id (e.g. from Applications).
+  closed_at: string | null;
+  // A user's report that this listing's scanned data looks wrong — always
+  // null unless the caller is an admin viewing GET /admin/jobs (see
+  // to_job_detail's include_flag). The reporter themselves never sees their
+  // own report reflected back.
+  flagged_at: string | null;
+  flag_reason: FlagReason | null;
+  flag_note: string | null;
+}
+
+export interface JobDetail {
+  url: JobPostingUrl;
+  posting: JobPosting | null;
+}
+
+// A searchable area — a Census metro/micro area or a state — and how many
+// postings fall in it.
+export interface Metro {
+  slug: string;
+  name: string;
+  kind: "metro" | "micro" | "state";
+  count: number;
+}
+
+// What a city search covered: the city and how far around it was looked.
+export interface SearchArea {
+  label: string;
+  radius_miles: number;
+}
+
+export interface JobList {
+  items: JobDetail[];
+  total: number;
+  page: number;
+  page_size: number;
+  // Set when the location search was a city, searched by distance.
+  search_area?: SearchArea | null;
+}
+
+// Other postings related to one job — see GET /jobs/{url_id}/similar.
+export interface SimilarJobs {
+  same_company: JobDetail[];
+  similar_title: JobDetail[];
+}
+
+export type ApplicationStatus = "saved" | "applied" | "interviewing" | "offer" | "rejected" | "withdrawn";
+
+// Trimmed to what the applications list/apply page actually read — the
+// backend's ApplicationRead (app/schemas/application.py) only sends these
+// fields, not the full JobPosting/TailoredResume/CoverLetter shapes.
+export interface ApplicationJobPosting {
+  id: string;
+  url_id: string;
+  apply_url: string;
+  title: string | null;
+  company_name: string | null;
+  company_logo_url: string | null;
+  // Optional: older backends don't send it.
+  location?: string | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  posted_at: string | null;
+}
+
+export interface ApplicationDocument {
+  id: string;
+  filename: string;
+}
+
+export interface Application {
+  id: string;
+  status: string;
+  notes: string | null;
+  is_archived: boolean;
+  // When this row was first made — always set (saving/applying to a job
+  // always adds one).
+  created_at: string;
+  // Set the moment status first switched to "applied" — null until then.
+  applied_at: string | null;
+  // A self-set "remind me about this one" day (not a specific time) — null
+  // means no reminder wanted.
+  follow_up_at: string | null;
+  // Which resume the apply page's picker is set to for this application —
+  // null means no explicit pick was ever saved (falls back to is_main).
+  selected_resume_id: string | null;
+  // Set when an auto-score run's best score cleared the ready bar — shown
+  // as "Ready to apply".
+  ready_to_apply_at: string | null;
+  job_posting: ApplicationJobPosting;
+  // Max of the fitness score and the tailored-resume score, whichever is set.
+  best_score: number | null;
+  latest_tailored_resume: ApplicationDocument | null;
+  latest_cover_letter: ApplicationDocument | null;
+  // This job's newest auto-score run (null if none) — sent with the list so
+  // its cards don't each fetch it. Only GET /applications fills it.
+  auto_score?: AutoScoreRun | null;
+}
+
+// Background score → tailor → score-tailored run (backend:
+// app.services.auto_score). The first four statuses are in progress.
+export type AutoScoreStatus =
+  | "queued"
+  | "scoring"
+  | "tailoring"
+  | "scoring_tailored"
+  | "ready"
+  | "not_ready"
+  | "below_threshold"
+  | "failed";
+
+export interface AutoScoreRun {
+  id: string;
+  job_posting_id: string;
+  resume_id: string;
+  status: AutoScoreStatus;
+  resume_score: number | null;
+  tailored_score: number | null;
+  best_score: number | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Resume {
+  id: string;
+  filename: string;
+  content_type: string;
+  is_main: boolean;
+  created_at: string;
+  // Whether this resume has been structured yet (LLM-broken-down into
+  // summary/sections/contact — see the backend's Resume.structured_content)
+  // — what GET /resumes/{id}/download?format=docx|pdf needs to be available.
+  has_structured_content: boolean;
+  // Groups every version of the same resume together — see
+  // GET /resumes/{id}/versions. GET /resumes itself already returns one row
+  // per family (the current main version, or the most recent if none is
+  // main), so these two fields only matter once you're inside a family's
+  // own version history.
+  root_resume_id: string;
+  version_number: number;
+}
+
+// Format a resume/tailored-resume/cover-letter can be downloaded/rendered as.
+export type DocumentFormat = "docx" | "pdf";
+
+// One rubric category's contribution to overall_score (backend:
+// app.schemas.resume.ScoreCategoryBreakdown) — job_requirements/strengths/
+// weaknesses here are scoped to this one category, distinct from the flat
+// matched_keywords/missing_keywords on the containing ResumeScore. category
+// is one of "required_skills" (50 pts) | "responsibilities" (30 pts) |
+// "seniority" (15 pts) | "preferred_qualifications" (5 pts), always all 4
+// present in that order (see app.services.resume_llm._CATEGORY_MAX).
+export interface ScoreCategoryBreakdown {
+  category: string;
+  score: number;
+  max_score: number;
+  why: string;
+  job_requirements: string[];
+  strengths: string[];
+  weaknesses: string[];
+}
+
+export interface ResumeScore {
+  id: string;
+  resume_id: string;
+  job_posting_id: string;
+  overall_score: number;
+  matched_keywords: string[];
+  missing_keywords: string[];
+  summary: string;
+  category_scores: ScoreCategoryBreakdown[];
+  // Informational only — does not affect overall_score/category_scores,
+  // which stay purely merit-based (see app.services.prompts.SCORE_PROMPT).
+  // Empty string when the candidate isn't substantially overqualified.
+  overqualification_note: string;
+  created_at: string;
+}
+
+// See GET /resumes/{resume_id}/score-history.
+export interface ResumeScoreHistoryEntry {
+  id: string;
+  job_posting_id: string;
+  // What a history row links to — the ApplyPage route
+  // (/jobs/:urlId/apply) is keyed on this, not job_posting_id.
+  url_id: string;
+  job_title: string | null;
+  company_name: string | null;
+  company_logo_url: string | null;
+  overall_score: number;
+  missing_keywords: string[];
+  created_at: string;
+}
+
+export interface RecurringMissingKeyword {
+  keyword: string;
+  count: number;
+}
+
+export interface ResumeScoreHistory {
+  entries: ResumeScoreHistoryEntry[];
+  recurring_missing_keywords: RecurringMissingKeyword[];
+}
+
+// See GET /resumes/missing-keywords — the richer analogue of
+// ResumeScoreHistory's recurring_missing_keywords above, for one resume
+// (main resume by default): same recurring-keyword idea, but with the jobs
+// that asked for each skill attached instead of just a count.
+export interface MissingSkillJobRef {
+  job_posting_id: string;
+  // What a job ref links to — same url_id convention as
+  // ResumeScoreHistoryEntry above.
+  url_id: string;
+  job_title: string | null;
+  company_name: string | null;
+  company_logo_url: string | null;
+}
+
+export interface MissingSkillSummaryEntry {
+  keyword: string;
+  count: number;
+  jobs: MissingSkillJobRef[];
+}
+
+export interface MissingSkillsSummary {
+  entries: MissingSkillSummaryEntry[];
+}
+
+// See GET /resumes/{resume_id}/roles — labels for this resume's own
+// work-history entries, used to populate the "which job does this belong
+// to" dropdown on a SkillAddition below.
+export interface ResumeRoles {
+  roles: string[];
+}
+
+// A candidate's draft explanation of a missing skill they actually have
+// experience with — see app.models.resume.ResumeSkillAddition. Saved
+// immediately on entry so progress across several skills survives a
+// refresh; only consumed once "Add missing skills to resume" is pressed.
+export interface SkillAddition {
+  id: string;
+  resume_id: string;
+  keyword: string;
+  target_role: string;
+  explanation: string;
+  created_at: string;
+}
+
+export interface TailoredResume {
+  id: string;
+  resume_id: string;
+  job_posting_id: string;
+  content: { summary: string; sections: { heading: string; bullets: string[] }[] };
+  filename: string;
+  created_at: string;
+}
+
+export interface TailoredResumeScore {
+  id: string;
+  tailored_resume_id: string;
+  job_posting_id: string;
+  overall_score: number;
+  matched_keywords: string[];
+  missing_keywords: string[];
+  summary: string;
+  category_scores: ScoreCategoryBreakdown[];
+  // See ResumeScore.overqualification_note.
+  overqualification_note: string;
+  created_at: string;
+}
+
+export interface CoverLetter {
+  id: string;
+  resume_id: string;
+  job_posting_id: string;
+  content: { greeting: string; body_paragraphs: string[]; closing: string };
+  filename: string;
+  created_at: string;
+}
+
+export interface InterviewQuestion {
+  question: string;
+  category: "behavioral" | "technical" | "role_specific";
+  // How this specific candidate should answer it, referencing their own resume.
+  approach: string;
+}
+
+export interface InterviewPrep {
+  id: string;
+  resume_id: string;
+  job_posting_id: string;
+  content: {
+    likely_questions: InterviewQuestion[];
+    talking_points: string[];
+    questions_to_ask: string[];
+  };
+  created_at: string;
+}
+
+export interface CrawlSource {
+  id: string;
+  // The company's official name: every job from this source shows it (or one
+  // of sub_brands, when the job's page names it).
+  name: string;
+  // "placeholder" (an unconfirmed slug/hostname label, replaced by the first
+  // usable job page), "auto" (set from evidence) or "manual" (set by an admin).
+  name_source: "placeholder" | "auto" | "manual";
+  sub_brands: string[];
+  // The company's own careers site, vs a job board or aggregator.
+  is_official: boolean;
+  ats_type: string | null;
+  board_url: string;
+  status: string;
+  is_active: boolean;
+  last_crawled_at: string | null;
+  last_job_count: number | null;
+  last_error: string | null;
+  // Why the source is in its status (above all rejected/delete), set by an admin or agent.
+  notes: string | null;
+  coverage_last_count: number | null;
+  coverage_baseline: number | null;
+  coverage_sample_count: number;
+  coverage_flagged_at: string | null;
+  created_at: string;
+  // Only in the sources list: the logo of the company the source is named after.
+  logo_url?: string | null;
+}
+
+export interface WindowCounts {
+  last_24h: number;
+  last_7d: number;
+  last_30d: number;
+  last_90d: number;
+}
+
+export interface AdminDashboard {
+  totals: {
+    job_listings: number;
+    jobs_flagged: number;
+    crawl_sources: number;
+    crawl_sources_flagged: number;
+    users: number;
+  };
+  users_joined: WindowCounts;
+  user_activity: WindowCounts;
+  application_scans: WindowCounts;
+}
+
+export interface CrawlSourceStats {
+  source: CrawlSource;
+  total_listings: number;
+  listings_added: WindowCounts;
+  scans: WindowCounts;
+}
+
+export interface ScanDayCount {
+  date: string;
+  count: number;
+}
+
+export interface ScanHourCount {
+  hour: string;
+  count: number;
+}
+
+export interface ScanWeekCount {
+  week: string;
+  count: number;
+}
+
+export interface ScanMonthCount {
+  month: string;
+  count: number;
+}
+
+export interface ApiKey {
+  id: string;
+  provider: string;
+  label: string;
+  model: string | null;
+  base_url: string | null;
+  is_active: boolean;
+  is_default: boolean;
+  last_used_at: string | null;
+  created_at: string;
+  masked_key: string;
+}
+
+// A credential for third-party tools (e.g. the browser extension) to act on
+// this user's behalf — see POST /auth/tokens. Unlike ApiKey, there's no
+// masked form of it stored: the raw value only ever exists once, in
+// PersonalAccessTokenCreateResult, right when it's minted.
+export interface PersonalAccessToken {
+  id: string;
+  label: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export interface PersonalAccessTokenCreateResult extends PersonalAccessToken {
+  token: string;
+}
+
+// One column per GET /jobs query param worth persisting — mirrors JobFilters
+// (api/jobs.ts) minus `page`. Re-run on a schedule server-side (see the
+// backend's saved_search_alerts.py) to email a digest when something new
+// matches.
+export interface SavedSearch {
+  id: string;
+  name: string | null;
+  q: string | null;
+  location: string | null;
+  metro: string | null;
+  radius: number | null;
+  company: string | null;
+  posted_within_days: number | null;
+  workplace_type: string | null;
+  // Null = every sector (not the board's tech default) — see savedSearchToParams.
+  sector: string | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  created_at: string;
+  last_alerted_at: string | null;
+}
+
+export type FeedbackKind = "bug" | "question" | "idea" | "other";
+export type FeedbackStatus = "new" | "read" | "resolved";
+
+export interface Feedback {
+  id: string;
+  kind: FeedbackKind;
+  message: string;
+  rating: number | null;
+  page_url: string | null;
+  status: FeedbackStatus;
+  created_at: string;
+}
+
+export interface AdminFeedback extends Feedback {
+  user_id: string;
+  user_email: string;
+  user_agent: string | null;
+}
+
+export type CollectionAction = "approve" | "noindex" | "archive" | "restore";
+export type CollectionView = "waiting" | "live" | "noindex" | "archived" | "all";
+
+export interface AdminCollection {
+  id: string;
+  key: string;
+  collection_type: string;
+  status: string;
+  name: string;
+  url: string | null;
+  // Where its page is or would be ("/jobs/us/<role>…"), for kinds with pages.
+  path: string | null;
+  indexable: boolean;
+  qualification_score: number | null;
+  recommendation: string | null;
+  issues: string[];
+  open_jobs: number | null;
+  companies: number | null;
+  freshness_score: number | null; // points out of 20
+  // From the nightly re-scoring: other collections with nearly the same jobs,
+  // and since when (Eastern dates) it's scored below the bar or had no jobs.
+  duplicates: string[];
+  // Its pages' Google results over the last 28 days; null until there's data.
+  search_clicks: number | null;
+  search_impressions: number | null;
+  below_bar_since: string | null;
+  empty_since: string | null;
+  last_evaluated_at: string | null;
+  updated_at: string;
+  actions: CollectionAction[];
+  can_reevaluate: boolean;
+}
+
+export interface AdminCollectionEvent {
+  created_at: string;
+  previous_status: string | null;
+  new_status: string;
+  trigger: string;
+  reason: string;
+  actor_email: string | null;
+}
+
+export interface AdminCollectionDetail extends AdminCollection {
+  qualification: Record<string, unknown> | null;
+  events: AdminCollectionEvent[];
+}
+
+export interface AdminCollectionList {
+  items: AdminCollection[];
+  total: number;
+  counts: Record<string, number>;
+}
+
+export type SearchKind = "role" | "location" | "company" | "other";
+
+// Google searches grouped by what they were after (search_opportunities).
+export interface AdminSearchOpportunity {
+  key: string;
+  kind: SearchKind;
+  label: string;
+  clicks: number;
+  impressions: number;
+  position: number;
+  open_jobs: number | null;
+  queries: { query: string; clicks: number; impressions: number }[];
+  pages: { page: string; impressions: number }[];
+  collection_key: string | null;
+  collection_id: string | null;
+  collection_status: string | null;
+}
+
+export interface AdminSearchOpportunityList {
+  items: AdminSearchOpportunity[];
+  total: number;
+  counts: Record<string, number>;
+  updated_on: string | null;
+}
+
+export interface AdminCollectionBulkResult {
+  updated: AdminCollection[];
+  errors: { id: string; detail: string }[];
+}
+
+export interface AdminFeedbackList {
+  items: AdminFeedback[];
+  total: number;
+  new_count: number;
+}
+
+export interface AiAccess {
+  has_own_key: boolean;
+  // What the next AI request runs on. An active plan outranks a saved key.
+  active_source: "subscription" | "own_key" | "free_trial" | null;
+  // The user's default key, reported even while the plan outranks it.
+  own_key_provider: string | null;
+  own_key_model: string | null;
+  free_trial_enabled: boolean;
+  free_evaluation_limit: number;
+  free_evaluations_used: number;
+  free_evaluations_remaining: number;
+  // Jobs unlocked with a free evaluation: every AI feature for these is free.
+  free_trial_job_ids: string[];
+  // Free resume restructures (the AI turning an upload into editable
+  // sections). free_restructure_limit is 0 when they're off.
+  free_restructure_limit: number;
+  free_restructures_remaining: number;
+  // The paid plan (Stripe). subscription_status is Stripe's own value
+  // ("active", "past_due", "canceled", …), null if never subscribed.
+  subscription_available: boolean;
+  subscription_price_label: string;
+  subscribed: boolean;
+  subscription_status: string | null;
+  subscription_current_period_end: string | null;
+  subscription_cancel_at_period_end: boolean;
+  subscription_requests_used: number;
+  // 0 means unlimited.
+  subscription_request_limit: number;
+}
+
+export type OnboardingStepKey = "resume" | "ai_access" | "application" | "evaluation";
+
+export interface Onboarding {
+  steps: { key: OnboardingStepKey; done: boolean }[];
+  completed_at: string | null;
+  dismissed_at: string | null;
+  ai_access: AiAccess;
+}
