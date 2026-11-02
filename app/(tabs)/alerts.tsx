@@ -67,7 +67,13 @@ export default function AlertsScreen() {
       }
       renderItem={({ item }) => (
         <Pressable
-          onPress={() => router.navigate({ pathname: "/", params: { q: item.q ?? "", location: item.location ?? "" } })}
+          onPress={() => router.navigate({ pathname: "/", params: {
+                q: item.q ?? "",
+                location: item.location ?? "",
+                workplace: item.workplace_type ?? "",
+                posted: item.posted_within_days ? String(item.posted_within_days) : "",
+              },
+            })}
           onLongPress={() => confirmRemove(item)}
           style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}
         >
